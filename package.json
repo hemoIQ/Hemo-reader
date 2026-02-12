@@ -1,6 +1,6 @@
 {
   "name": "smart-pdf-reader-pro",
-  "version": "1.0.3",
+  "version": "1.0.4",
   "description": "A smart PDF reader with offline capabilities and text fixing features.",
   "main": "main.js",
   "scripts": {
