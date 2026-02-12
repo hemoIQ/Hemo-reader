@@ -13,7 +13,7 @@ function createWindow() {
       contextIsolation: false, // For simple local file access if needed
       webSecurity: false // Allow loading local resources freely
     },
-    // icon: path.join(__dirname, 'icon.ico') // Uncomment if you have an icon
+    // icon: path.join(__dirname, 'icon.ico')
   });
 
   mainWindow.loadFile('index.html');
@@ -22,61 +22,57 @@ function createWindow() {
     mainWindow = null;
   });
 
-  // Auto-Update Configuration
-  autoUpdater.autoDownload = true;
-  autoUpdater.autoInstallOnAppQuit = true;
-
-  function checkForUpdates() {
-    if (!mainWindow) return;
-    // Check internet connection or just rely on autoUpdater's error handling
-    autoUpdater.checkForUpdates().catch(err => {
-      console.log('Update check failed (likely offline):', err);
-    });
-  }
-
   // Check for updates once the window is ready
   mainWindow.once('ready-to-show', () => {
     // Wait a bit to ensure potential network connection is established
     setTimeout(() => {
-      checkForUpdates();
+      autoUpdater.checkForUpdates().catch(err => {
+        console.log('Update check failed (likely offline):', err);
+      });
     }, 3000);
-  });
-
-  // Auto-updater events
-  autoUpdater.on('checking-for-update', () => {
-    if (mainWindow) mainWindow.webContents.send('update_status', 'checking');
-  });
-
-  autoUpdater.on('update-available', () => {
-    if (mainWindow) mainWindow.webContents.send('update_status', 'available');
-    console.log('Update available. Downloading...');
-  });
-
-  autoUpdater.on('update-not-available', () => {
-    if (mainWindow) mainWindow.webContents.send('update_status', 'not_available');
-  });
-
-  autoUpdater.on('error', (err) => {
-    console.log('Auto-updater error:', err);
-    if (mainWindow) mainWindow.webContents.send('update_status', 'error', err.message);
-  });
-
-  autoUpdater.on('update-downloaded', () => {
-    if (mainWindow) {
-      mainWindow.webContents.send('update_status', 'downloaded'); // Update status text
-      mainWindow.webContents.send('update_downloaded'); // Trigger existing toast
-    }
-  });
-
-  ipcMain.on('restart_app', () => {
-    autoUpdater.quitAndInstall(false, true);
-  });
-
-  ipcMain.on('check_update', () => {
-    autoUpdater.checkForUpdates();
   });
 }
 
+// Auto-Update Configuration
+autoUpdater.autoDownload = true;
+autoUpdater.autoInstallOnAppQuit = true;
+
+// Auto-updater events
+autoUpdater.on('checking-for-update', () => {
+  if (mainWindow) mainWindow.webContents.send('update_status', 'checking');
+});
+
+autoUpdater.on('update-available', () => {
+  if (mainWindow) mainWindow.webContents.send('update_status', 'available');
+  console.log('Update available. Downloading...');
+});
+
+autoUpdater.on('update-not-available', () => {
+  if (mainWindow) mainWindow.webContents.send('update_status', 'not_available');
+});
+
+autoUpdater.on('error', (err) => {
+  console.log('Auto-updater error:', err);
+  if (mainWindow) mainWindow.webContents.send('update_status', 'error', err.message);
+});
+
+autoUpdater.on('update-downloaded', () => {
+  if (mainWindow) {
+    mainWindow.webContents.send('update_status', 'downloaded'); // Update status text
+    mainWindow.webContents.send('update_downloaded'); // Trigger existing toast
+  }
+});
+
+// IPC Handlers
+ipcMain.on('restart_app', () => {
+  autoUpdater.quitAndInstall(false, true);
+});
+
+ipcMain.on('check_update', () => {
+  autoUpdater.checkForUpdates();
+});
+
+// App Lifecycle
 app.whenReady().then(() => {
   createWindow();
 
