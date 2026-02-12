@@ -636,10 +636,25 @@
                 try {
                     const originalBuffer = this.result;
 
+                    // تحسين: تحديد مسار CMaps بناءً على البيئة
+                    // في الإنتاج (بعد التثبيت)، تكون في resources/cmaps
+                    // في التطوير، تكون في libs/cmaps
+                    let cmapsPath = 'libs/cmaps/';
+                    if (window.process && window.process.resourcesPath) {
+                        const fs = require('fs');
+                        const path = require('path');
+                        const prodPath = path.join(window.process.resourcesPath, 'cmaps/');
+
+                        // نتحقق إذا كان المسار موجوداً (يعني أننا في وضع الإنتاج)
+                        if (fs.existsSync(prodPath)) {
+                            cmapsPath = prodPath;
+                        }
+                    }
+
                     // استخدام CMaps لحل مشكلة تداخل الحروف
                     const loadingTask = pdfjsLib.getDocument({
                         data: originalBuffer.slice(0),
-                        cMapUrl: 'libs/cmaps/',
+                        cMapUrl: cmapsPath,
                         cMapPacked: true,
                         enableXfa: true,
                     });
@@ -697,10 +712,21 @@
                 const b = e.target.result; activeId = id; pageStrokes = b.strokes || {};
                 showLoading("DEPLOYING PAGES");
 
+                // تحسين مسار CMaps
+                let cmapsPath = 'libs/cmaps/';
+                if (window.process && window.process.resourcesPath) {
+                    const fs = require('fs');
+                    const path = require('path');
+                    const prodPath = path.join(window.process.resourcesPath, 'cmaps/');
+                    if (fs.existsSync(prodPath)) {
+                        cmapsPath = prodPath;
+                    }
+                }
+
                 // إضافة CMaps هنا أيضًا
                 const loadingTask = pdfjsLib.getDocument({
                     data: b.data,
-                    cMapUrl: 'libs/cmaps/',
+                    cMapUrl: cmapsPath,
                     cMapPacked: true,
                     enableXfa: true
                 });

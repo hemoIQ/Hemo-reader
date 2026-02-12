@@ -10,8 +10,8 @@ function createWindow() {
     height: 800,
     webPreferences: {
       nodeIntegration: true,
-      contextIsolation: false, // For simple local file access if needed
-      webSecurity: false // Allow loading local resources freely
+      contextIsolation: false,
+      webSecurity: false // Allow loading local resources
     },
     // icon: path.join(__dirname, 'icon.ico')
   });
@@ -24,7 +24,11 @@ function createWindow() {
 
   // Check for updates once the window is ready
   mainWindow.once('ready-to-show', () => {
-    // Wait a bit to ensure potential network connection is established
+    // Send environment info to renderer
+    // In production with extraResources, cmaps are in resources/cmaps
+    // In dev, they are in libs/cmaps (relative to index.html)
+    // We can rely on renderer logic, or send paths here.
+    // For now, let's just trigger the update check.
     setTimeout(() => {
       autoUpdater.checkForUpdates().catch(err => {
         console.log('Update check failed (likely offline):', err);
@@ -58,8 +62,8 @@ autoUpdater.on('error', (err) => {
 
 autoUpdater.on('update-downloaded', () => {
   if (mainWindow) {
-    mainWindow.webContents.send('update_status', 'downloaded'); // Update status text
-    mainWindow.webContents.send('update_downloaded'); // Trigger existing toast
+    mainWindow.webContents.send('update_status', 'downloaded');
+    mainWindow.webContents.send('update_downloaded');
   }
 });
 
