@@ -1,11 +1,11 @@
 {
   "name": "smart-pdf-reader-pro",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "description": "A smart PDF reader with offline capabilities and text fixing features.",
   "main": "main.js",
   "scripts": {
     "start": "electron .",
-    "dist": "electron-builder",
+    "dist": "electron-builder --publish always",
     "publish": "electron-builder --publish always"
   },
   "keywords": [
