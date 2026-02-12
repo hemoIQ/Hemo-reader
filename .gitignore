@@ -1,0 +1,6 @@
+node_modules
+dist
+release
+libs/fonts/*.zip
+*.log
+.DS_Store

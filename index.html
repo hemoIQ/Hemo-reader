@@ -1,0 +1,719 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Smart PDF Reader Pro - Text Fixed</title>
+    <!-- Local assets will be used here -->
+    <script src="libs/tailwindcss.js"></script>
+    <script src="libs/pdf.min.js"></script>
+    <link rel="stylesheet" href="libs/fonts.css"> 
+    <style>
+        /* Fonts will be loaded via fonts.css */
+        
+        :root {
+            --glass-bg: rgba(15, 23, 42, 0.85);
+            --glass-border: rgba(255, 255, 255, 0.12);
+            --accent-blue: #3b82f6;
+            --smooth-ease: cubic-bezier(0.34, 1.56, 0.64, 1);
+        }
+
+        body {
+            font-family: 'Cairo', sans-serif;
+            background: radial-gradient(circle at 50% 0%, #111827, #020617);
+            color: #f1f5f9;
+            margin: 0; padding: 0;
+            overflow: hidden;
+            user-select: none;
+            height: 100vh;
+        }
+
+        #scroll-root {
+            height: calc(100vh - 80px);
+            overflow-y: auto;
+            overflow-x: hidden;
+            scroll-behavior: auto !important; 
+        }
+
+        header.glass-header {
+            background: var(--glass-bg);
+            backdrop-filter: blur(25px) saturate(200%);
+            border-bottom: 1px solid var(--glass-border);
+            height: 80px;
+            display: flex;
+            align-items: center;
+            padding: 0 2rem;
+            z-index: 3000;
+            box-shadow: 0 10px 50px rgba(0, 0, 0, 0.8);
+        }
+
+        #pages-container {
+            display: flex;
+            flex-direction: column;
+            gap: 60px;
+            align-items: center;
+            padding: 40px 0 400px 0;
+            width: 100%;
+        }
+
+        .page-holder {
+            position: relative;
+            background: white; /* خلفية بيضاء لحل مشاكل تباين النصوص */
+            box-shadow: 0 60px 120px -30px rgba(0, 0, 0, 0.9);
+            transition: width 0.4s var(--smooth-ease);
+            width: 95%;
+            display: block;
+            flex-shrink: 0;
+            overflow: hidden;
+            border-radius: 8px;
+        }
+
+        .natural-view .page-holder { max-width: 820px; }
+        .flexible-view .page-holder { max-width: 98%; width: 98%; }
+
+        /* إعدادات الكانفاس الدقيقة */
+        .pdf-canvas { 
+            width: 100% !important; 
+            height: 100% !important; 
+            display: block; 
+            position: absolute; 
+            top: 0; left: 0; 
+            z-index: 5;
+        }
+
+        /* طبقة النصوص الشفافة */
+        .textLayer {
+            position: absolute;
+            left: 0; top: 0; right: 0; bottom: 0;
+            overflow: hidden;
+            opacity: 0.2;
+            line-height: 1.0;
+            z-index: 10;
+            mix-blend-mode: multiply;
+        }
+
+        .draw-layer { 
+            position: absolute; 
+            top: 0; left: 0; 
+            width: 100% !important; 
+            height: 100% !important; 
+            z-index: 20; 
+            touch-action: none; 
+            mix-blend-mode: multiply; 
+        }
+
+        .inverted-mode .page-holder { background: #111; }
+        .inverted-mode .pdf-canvas { filter: invert(1) hue-rotate(180deg) contrast(0.9); } /* تقليل التباين قليلا لمنع التوهج */
+        .inverted-mode .textLayer { filter: invert(1); opacity: 0.5; }
+        .inverted-mode .draw-layer { mix-blend-mode: screen; }
+
+        .glass-btn {
+            background: rgba(255, 255, 255, 0.05);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            transition: all 0.4s var(--smooth-ease);
+            cursor: pointer;
+            display: flex; align-items: center; justify-content: center;
+        }
+        .glass-btn:hover { background: rgba(255, 255, 255, 0.12); border-color: var(--accent-blue); transform: translateY(-4px); }
+        .glass-btn.active { background: var(--accent-blue); color: white; border-color: transparent; box-shadow: 0 0 30px rgba(59, 130, 246, 0.6); }
+
+        #highlight-sub-tools, #scroll-sub-tools, #capture-sub-tools {
+            transition: all 0.6s var(--smooth-ease);
+            max-width: 0; overflow: hidden; opacity: 0; display: flex; align-items: center;
+        }
+        #highlight-sub-tools.visible, #scroll-sub-tools.visible, #capture-sub-tools.visible { 
+            max-width: 1200px; opacity: 1; margin-right: 1.5rem; 
+        }
+
+        #drop-overlay {
+            display: none; position: fixed; inset: 0; z-index: 10000;
+            justify-content: center; align-items: center; backdrop-filter: blur(35px);
+            background: rgba(2, 6, 23, 0.92);
+            pointer-events: none;
+        }
+        #drop-overlay.active { display: flex; pointer-events: auto; }
+        .drop-box { border: 4px dashed rgba(59, 130, 246, 0.4); margin: 40px; border-radius: 60px; width: calc(100% - 80px); height: calc(100% - 80px); display: flex; flex-direction: column; align-items: center; justify-content: center; }
+
+        #selection-rect {
+            position: fixed; border: 2.5px solid var(--accent-blue); background: rgba(59, 130, 246, 0.1);
+            display: none; z-index: 5000; pointer-events: none; box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.7); border-radius: 4px;
+        }
+
+        .loader-scr {
+            display: none; position: fixed; inset: 0; z-index: 9999;
+            justify-content: center; align-items: center; backdrop-filter: blur(30px);
+            background: rgba(2, 6, 23, 0.9);
+        }
+
+        .custom-scrollbar::-webkit-scrollbar { width: 4px; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 10px; }
+        .progress-bar-container { background: rgba(255,255,255,0.05); border-radius: 20px; height: 6px; overflow: hidden; }
+        .progress-bar-fill { background: linear-gradient(90deg, #3b82f6, #60a5fa); transition: width 1.5s var(--smooth-ease); }
+        
+        .crop-active { cursor: crosshair !important; }
+        .brace-toggle-btn { font-size: 11px; font-weight: 900; padding: 4px 12px; border-radius: 8px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); transition: all 0.3s; color: #fff; }
+        .brace-toggle-btn.active { background: #3b82f6; border-color: transparent; }
+        
+        /* مؤشر الفرشاة */
+        #brush-cursor {
+            position: fixed; pointer-events: none; z-index: 9999;
+            display: none; border: 2px solid #fff;
+            background-color: transparent; box-shadow: 0 0 15px rgba(0,0,0,0.5);
+            border-radius: 4px;
+        }
+
+        /* Toast for updates */
+        #update-toast {
+            position: fixed; bottom: 20px; right: 20px;
+            background: #1e293b; color: white;
+            padding: 16px; border-radius: 8px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+            display: none; z-index: 10001;
+        }
+        #update-toast button {
+            margin-left: 10px;
+            padding: 4px 8px;
+            background: #3b82f6;
+            border: none; border-radius: 4px;
+            color: white; cursor: pointer;
+        }
+    </style>
+</head>
+<body class="natural-view text-white">
+
+    <div id="brush-cursor"></div>
+    <div id="selection-rect"></div>
+    
+    <div id="update-toast">
+        <span id="update-msg"></span>
+        <button id="update-btn" class="hidden">Restart</button>
+    </div>
+
+    <div id="drop-overlay">
+        <div class="drop-box">
+            <div class="p-16 rounded-[4rem] bg-blue-600/10 border border-blue-500/20 mb-8">
+                <svg class="w-32 h-32 text-blue-400 animate-bounce" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+            </div>
+            <h2 class="text-6xl font-black tracking-tighter">ألقِ كتابك هنا</h2>
+            <p class="text-slate-400 mt-4 text-2xl font-light text-center">تم تفعيل وضع تصحيح النصوص والخطوط</p>
+        </div>
+    </div>
+
+    <div id="loading" class="loader-scr text-center">
+        <div class="w-24 h-24 border-4 border-blue-500/10 border-t-blue-500 rounded-full animate-spin mb-8 mx-auto"></div>
+        <p id="loading-text" class="text-xs font-black tracking-[0.5em] text-blue-400 uppercase">Engine Loading</p>
+    </div>
+
+    <div id="toast" class="fixed bottom-12 left-1/2 -translate-x-1/2 bg-slate-900/90 backdrop-blur-2xl px-10 py-4 rounded-[2rem] shadow-2xl z-[10000] hidden border border-white/10 text-sm font-bold min-w-[250px] text-center"></div>
+
+    <div id="app" class="h-screen flex flex-col">
+        <header class="glass-header">
+            <div class="flex items-center gap-5">
+                <div class="bg-gradient-to-tr from-blue-600 to-blue-400 p-3 rounded-2xl shadow-2xl rotate-3">
+                    <svg class="w-8 h-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+                </div>
+                <div><h1 class="text-2xl font-black text-white leading-none tracking-tighter">قارئ برو</h1><p class="text-[10px] text-blue-400 font-bold tracking-[0.3em] uppercase mt-1">Text Fix Edition</p></div>
+            </div>
+            
+            <div id="reader-controls" class="hidden flex-1 flex justify-center items-center gap-4">
+                
+                <!-- سكرول تلقائي -->
+                <div class="flex items-center bg-white/5 rounded-[1.5rem] p-1.5 border border-white/5 gap-1">
+                    <button id="auto-scroll-toggle-btn" onclick="toggleAutoScrollTools()" class="glass-btn p-3 rounded-2xl text-gray-300">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 13l-7 7-7-7m14-8l-7 7-7-7"></path></svg>
+                    </button>
+                    <div id="scroll-sub-tools">
+                        <div class="flex flex-col items-center px-4 border-r border-white/10">
+                            <span id="speed-label" class="text-[9px] text-blue-400 font-black mb-1">5%</span>
+                            <input type="range" id="scroll-speed-range" min="1" max="100" value="5" oninput="updateScrollSpeed(this.value)" class="w-24 h-0.5 bg-white/10 accent-blue-500 appearance-none rounded-full cursor-pointer">
+                        </div>
+                        <button id="play-scroll-btn" onclick="runAutoScrollToggle()" class="p-3 text-gray-400 hover:text-green-400 transition-all hover:scale-125">
+                            <svg class="w-6 h-6" id="scroll-play-icon" fill="currentColor" viewBox="0 0 20 20"><path d="M4.5 3.5v13l11-6.5-11-6.5z"></path></svg>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- تظليل (قلم) -->
+                <div class="flex items-center bg-white/5 rounded-[1.5rem] p-1.5 border border-white/5 gap-1">
+                    <button id="toggle-pen-btn" onclick="toggleHighlightTools()" class="glass-btn p-3 rounded-2xl text-gray-300">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M15.232 5.232l3.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" stroke-width="2" stroke-linecap="round"></path></svg>
+                    </button>
+                    <div id="highlight-sub-tools">
+                        <div class="flex gap-2 px-4 border-r border-white/10">
+                            <button onclick="updateBrushColor('#ffff00', this)" class="w-5 h-5 rounded-full bg-yellow-400 hover:scale-150 transition-transform active"></button>
+                            <button onclick="updateBrushColor('#00ff00', this)" class="w-5 h-5 rounded-full bg-green-500 hover:scale-150 transition-transform"></button>
+                            <button onclick="updateBrushColor('#00ccff', this)" class="w-5 h-5 rounded-full bg-blue-400 hover:scale-150 transition-transform"></button>
+                        </div>
+                        <div class="flex bg-black/40 rounded-2xl p-1.5 gap-1 mx-4 border border-white/5">
+                            <button id="draw-free" onclick="setDrawMode('free')" class="tool-btn p-2 rounded-xl active"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M15.232 5.232l3.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" stroke-width="2"></path></svg></button>
+                            <button id="draw-rect" onclick="setDrawMode('rect')" class="tool-btn p-2 rounded-xl"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M10 4H7a2 2 0 00-2 2v12a2 2 0 002 2h3m4-16h3a2 2 0 012 2v12a2 2 0 01-2 2h-3" stroke-width="2.5"></path></svg></button>
+                            <button id="draw-eraser" onclick="setDrawMode('eraser')" class="tool-btn p-2 rounded-xl"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M19 11l-8-8-7 7 8 8 7-7zM12 19l7 7" stroke-width="2"></path></svg></button>
+                        </div>
+                        <div class="flex items-center gap-1.5 px-3 border-r border-white/10 bg-black/20 rounded-xl py-1">
+                            <button id="brace-left" onclick="setBraceSide('left')" class="brace-toggle-btn text-white">{</button>
+                            <button id="brace-both" onclick="setBraceSide('both')" class="brace-toggle-btn active text-white">{ }</button>
+                            <button id="brace-right" onclick="setBraceSide('right')" class="brace-toggle-btn text-white">}</button>
+                            <button id="brace-none" onclick="setBraceSide('none')" class="brace-toggle-btn text-white">X</button>
+                        </div>
+                        <input type="range" id="size-range" min="15" max="150" value="45" oninput="brushSize=this.value" class="w-24 h-0.5 bg-white/10 accent-blue-500 appearance-none rounded-full cursor-pointer mx-2">
+                        <button onclick="handleUndo()" class="p-3 text-gray-400 hover:text-blue-400 transition-all"><svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" stroke-width="2" stroke-linecap="round"></path></svg></button>
+                    </div>
+                </div>
+
+                <!-- التقاط الشاشة -->
+                <div class="flex items-center bg-white/5 rounded-[1.5rem] p-1.5 border border-white/5 gap-1">
+                    <button id="capture-toggle-btn" onclick="toggleCaptureTools()" class="glass-btn p-3 rounded-2xl text-gray-300">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
+                    </button>
+                    <div id="capture-sub-tools">
+                        <div class="flex items-center gap-1.5 px-3 border-r border-white/10">
+                            <button onclick="captureFullPage()" class="px-4 py-2 text-[10px] font-black text-blue-300 hover:text-white transition-colors uppercase tracking-widest">Full Page</button>
+                            <button onclick="captureCurrentView()" class="px-4 py-2 text-[10px] font-black text-blue-300 hover:text-white transition-colors uppercase tracking-widest">Screen</button>
+                        </div>
+                        <button onclick="startCropMode()" class="px-4 py-2 text-[10px] font-black text-blue-300 hover:text-white transition-colors uppercase tracking-widest">Scroll Crop</button>
+                    </div>
+                </div>
+
+                <div class="bg-slate-900/80 px-6 py-3 rounded-2xl border border-white/5 text-xs font-black text-blue-400 shadow-inner flex items-center gap-4">
+                    <span id="page-now" class="text-white text-lg leading-none">1</span><span class="opacity-20 text-sm">/</span><span id="page-total" class="text-blue-300">1</span>
+                </div>
+
+                <button onclick="toggleFlex()" id="flex-btn" class="glass-btn px-8 py-3 rounded-2xl text-[11px] font-black uppercase text-blue-200">Natural View</button>
+                <button onclick="toggleInvert()" class="glass-btn p-3.5 rounded-2xl text-white"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" stroke-width="2"></path></svg></button>
+                <button onclick="closeReader()" class="bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/20 px-8 py-3 rounded-2xl font-black transition-all">خروج</button>
+            </div>
+
+            <div id="lib-controls">
+                <input type="file" id="file-in" class="hidden" accept=".pdf" onchange="handleFile(event)">
+                <label for="file-in" class="bg-blue-600 px-10 py-4 rounded-[1.5rem] font-black cursor-pointer hover:bg-blue-500 shadow-2xl transition-all inline-flex items-center gap-4 text-white active:scale-95">
+                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M12 4v16m8-8H4" stroke-width="3" stroke-linecap="round"></path></svg>
+                    <span>استيراد كتاب</span>
+                </label>
+            </div>
+        </header>
+
+        <main class="flex-1 overflow-hidden relative">
+            <div id="scroll-root" class="custom-scrollbar">
+                <div id="library-view" class="max-w-[1500px] mx-auto p-16 text-right">
+                    <div class="mb-24 text-white">
+                        <h2 class="text-8xl font-black mb-8 bg-gradient-to-b from-white to-slate-600 bg-clip-text text-transparent tracking-tighter">مكتبتي</h2>
+                        <p class="text-slate-400 text-3xl font-light max-w-3xl mr-0">تجربة قراءة PDF استثنائية مع دقة خطوط فائقة.</p>
+                    </div>
+                    <div id="books-grid" class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-16 text-center text-white"></div>
+                    <div id="empty-state" class="hidden text-center py-40 text-slate-700 text-4xl font-thin italic">المكتبة فارغة حالياً.. اسحب ملف هنا.</div>
+                </div>
+                <div id="reader-view" class="hidden w-full"><div id="pages-container"></div></div>
+            </div>
+        </main>
+    </div>
+
+    <!-- نافذة الحذف المضمونة -->
+    <div id="confirm-modal" class="fixed inset-0 z-[10001] hidden items-center justify-center bg-black/70 backdrop-blur-3xl p-4 text-white text-center">
+        <div class="bg-slate-900/60 border border-white/10 p-16 rounded-[4rem] shadow-2xl max-w-lg w-full">
+            <h3 class="text-5xl font-black mb-6 tracking-tighter text-white">حذف الكتاب؟</h3>
+            <p class="text-slate-400 mb-12 text-xl font-bold">سيتم مسح الكتاب وكافة التظليلات والتقدم نهائياً.</p>
+            <div class="flex gap-6">
+                <button id="confirm-yes" class="flex-[1.5] bg-red-600 py-6 rounded-[2rem] font-black text-white hover:bg-red-500 transition active:scale-95 text-lg">احذف</button>
+                <button id="confirm-no" class="flex-1 bg-white/5 py-6 rounded-[2rem] font-bold text-slate-300 border border-white/10 text-lg text-white">تراجع</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const { ipcRenderer } = require('electron');
+
+        // Auto-update listeners
+        const toast = document.getElementById('update-toast');
+        const msg = document.getElementById('update-msg');
+        const restartBtn = document.getElementById('update-btn');
+
+        ipcRenderer.on('update_available', () => {
+            ipcRenderer.removeAllListeners('update_available');
+            msg.innerText = 'A new update is available. Downloading now...';
+            toast.style.display = 'block';
+        });
+
+        ipcRenderer.on('update_downloaded', () => {
+            ipcRenderer.removeAllListeners('update_downloaded');
+            msg.innerText = 'Update Downloaded. It will be installed on restart. Restart now?';
+            restartBtn.classList.remove('hidden');
+            toast.style.display = 'block';
+        });
+
+        restartBtn.addEventListener('click', () => {
+            ipcRenderer.send('restart_app');
+        });
+
+        // Use local PDF worker
+        pdfjsLib.GlobalWorkerOptions.workerSrc = 'libs/pdf.worker.min.js';
+
+        let db, pdfDoc, activeId, isFlexible = false, isNight = false, globalPageRatio = 1.41;
+        let brushColor = '#ffff00', brushSize = 45, drawMode = 'free', pageStrokes = {};
+        let braceSide = 'both', isPainting = false, startPos = {x:0, y:0, scroll:0}, isHighlightEnabled = false, isCropMode = false, isCaptureToolsVisible = false;
+        let isAutoScrolling = false, isScrollToolsVisible = false, scrollSpeed = 5, scrollAnimId = null, subPixelAccumulator = 0;
+        let pageObs;
+
+        const request = indexedDB.open("LuxuryReader_TextFixed_Final_v600", 1);
+        request.onupgradeneeded = e => { db = e.target.result; if (!db.objectStoreNames.contains("books")) db.createObjectStore("books", {keyPath: "id"}); };
+        request.onsuccess = e => { db = e.target.result; renderLib(); };
+
+        const dropOverlay = document.getElementById('drop-overlay');
+        window.addEventListener('dragenter', e => { e.preventDefault(); if(document.getElementById('reader-view').classList.contains('hidden')) dropOverlay.classList.add('active'); });
+        window.addEventListener('dragover', e => { e.preventDefault(); });
+        dropOverlay.addEventListener('dragleave', e => { if (e.target === dropOverlay || e.relatedTarget === null) dropOverlay.classList.remove('active'); });
+        window.addEventListener('drop', e => { e.preventDefault(); dropOverlay.classList.remove('active'); if(e.dataTransfer.files.length) handleIn(e.dataTransfer.files[0]); });
+
+        async function handleIn(file) {
+            if(!file || file.type !== 'application/pdf') return;
+            showLoading("PROCESSING DOCUMENT");
+            const reader = new FileReader();
+            reader.onload = async function() {
+                try {
+                    const originalBuffer = this.result;
+                    
+                    // استخدام CMaps لحل مشكلة تداخل الحروف
+                    const loadingTask = pdfjsLib.getDocument({
+                        data: originalBuffer.slice(0),
+                        cMapUrl: 'libs/cmaps/',
+                        cMapPacked: true,
+                        enableXfa: true,
+                    });
+
+                    const tempPdf = await loadingTask.promise;
+                    const firstPage = await tempPdf.getPage(1);
+                    const vp = firstPage.getViewport({ scale: 0.5 });
+                    const canvas = document.createElement('canvas');
+                    canvas.width = vp.width; canvas.height = vp.height;
+                    await firstPage.render({ canvasContext: canvas.getContext('2d'), viewport: vp }).promise;
+                    const book = { id: 'bk_'+Date.now(), name: file.name, data: originalBuffer, last: 1, total: tempPdf.numPages, thumb: canvas.toDataURL('image/jpeg', 0.6), strokes: {} };
+                    const tx = db.transaction("books", "readwrite"); tx.objectStore("books").add(book);
+                    tx.oncomplete = () => { hideLoading(); renderLib(); showToast("تم استيراد الكتاب بنجاح"); };
+                } catch (err) { hideLoading(); alert("فشل في معالجة الملف."); }
+            };
+            reader.readAsArrayBuffer(file);
+        }
+
+        function handleFile(e) { if(e.target.files[0]) handleIn(e.target.files[0]); }
+
+        function renderLib() {
+            const tx = db.transaction("books", "readonly");
+            tx.objectStore("books").getAll().onsuccess = (e) => {
+                const books = e.target.result;
+                const grid = document.getElementById('books-grid'); grid.innerHTML = '';
+                document.getElementById('empty-state').style.display = books.length ? 'none' : 'block';
+                books.sort((a,b)=>b.id.localeCompare(a.id)).forEach(b => {
+                    const progress = Math.round((b.last / b.total) * 100);
+                    const el = document.createElement('div');
+                    el.className = "book-card-glass p-6 rounded-[2.5rem]";
+                    el.innerHTML = `
+                        <div class="relative group cursor-pointer overflow-hidden rounded-[2.5rem] mb-8 shadow-2xl" onclick="openReader('${b.id}')">
+                            <img src="${b.thumb}" class="w-full aspect-[3/4] object-cover group-hover:scale-110 transition-all duration-1000">
+                            <div class="absolute inset-0 bg-gradient-to-t from-blue-900/90 to-transparent opacity-0 group-hover:opacity-100 flex items-end justify-center pb-12 transition-all">
+                                <span class="bg-white text-blue-600 px-10 py-4 rounded-2xl font-black shadow-2xl active:scale-90 transition-all">فتح الكتاب</span>
+                            </div>
+                        </div>
+                        <div class="text-right">
+                            <h3 class="font-black text-2xl truncate mb-4" title="${b.name}">${b.name}</h3>
+                            <div class="flex justify-between text-[11px] text-blue-400 font-black mb-5 uppercase"><span>P. ${b.last}</span><span>${b.total - b.last} LEFT</span></div>
+                            <div class="progress-bar-container mb-6 shadow-inner"><div class="progress-bar-fill h-full" style="width: ${progress}%"></div></div>
+                            <div class="flex justify-between items-center">
+                                <span class="text-xs font-black text-slate-500 uppercase tracking-widest text-white">${progress}% DONE</span>
+                                <button onclick="handleDelete(event, '${b.id}')" class="p-4 text-slate-500 hover:text-red-400 hover:bg-red-500/10 rounded-2xl transition-all active:scale-75"><svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7" stroke-width="2" stroke-linecap="round"></path></svg></button>
+                            </div>
+                        </div>`;
+                    grid.appendChild(el);
+                });
+            };
+        }
+
+        async function openReader(id, startAt = null) {
+            const tx = db.transaction("books", "readonly");
+            tx.objectStore("books").get(id).onsuccess = async (e) => {
+                const b = e.target.result; activeId = id; pageStrokes = b.strokes || {};
+                showLoading("DEPLOYING PAGES");
+                
+                // إضافة CMaps هنا أيضًا
+                const loadingTask = pdfjsLib.getDocument({
+                    data: b.data,
+                    cMapUrl: 'libs/cmaps/',
+                    cMapPacked: true,
+                    enableXfa: true
+                });
+
+                pdfDoc = await loadingTask.promise;
+                document.getElementById('page-total').innerText = pdfDoc.numPages;
+                const container = document.getElementById('pages-container'); container.innerHTML = '';
+                document.getElementById('library-view').classList.add('hidden');
+                document.getElementById('reader-view').classList.remove('hidden');
+                document.getElementById('reader-controls').classList.remove('hidden');
+                document.getElementById('lib-controls').classList.add('hidden');
+                const first = await pdfDoc.getPage(1);
+                globalPageRatio = first.getViewport({scale:1}).height / first.getViewport({scale:1}).width;
+                const targetW = isFlexible ? window.innerWidth * 0.98 : 820;
+                const fixedH = targetW * globalPageRatio;
+                for (let i = 1; i <= pdfDoc.numPages; i++) {
+                    const wrap = document.createElement('div');
+                    wrap.className = 'page-holder'; wrap.dataset.num = i; wrap.id = `pg-${i}`;
+                    wrap.style.height = fixedH + 'px'; container.appendChild(wrap);
+                }
+                initObserver();
+                const jumpTo = startAt || b.last;
+                setTimeout(() => { const el = document.getElementById(`pg-${jumpTo}`); if (el) el.scrollIntoView({ behavior: 'auto', block: 'start' }); hideLoading(); }, 350);
+            };
+        }
+
+        function initObserver() {
+            if(pageObs) pageObs.disconnect();
+            pageObs = new IntersectionObserver(entries => {
+                entries.forEach(entry => {
+                    const num = entry.target.dataset.num;
+                    if(entry.isIntersecting) { renderPageContent(num, entry.target); document.getElementById('page-now').innerText = num; updateProgressDB(parseInt(num)); } 
+                    else { entry.target.innerHTML = ''; }
+                });
+            }, { root: document.getElementById('scroll-root'), rootMargin: '1200px 0px', threshold: 0.01 });
+            document.querySelectorAll('.page-holder').forEach(p => pageObs.observe(p));
+        }
+
+        async function renderPageContent(num, container) {
+            if (container.children.length > 0) return;
+            const page = await pdfDoc.getPage(parseInt(num));
+            const targetW = isFlexible ? window.innerWidth * 0.98 : 820;
+            const vp = page.getViewport({ scale: (targetW / page.getViewport({scale:1}).width) * 1.8 }); 
+            
+            const pCanvas = document.createElement('canvas'); pCanvas.className = 'pdf-canvas';
+            const dCanvas = document.createElement('canvas'); dCanvas.className = 'draw-layer';
+            const tLayer = document.createElement('div'); tLayer.className = 'textLayer';
+
+            pCanvas.width = vp.width; pCanvas.height = vp.height;
+            dCanvas.width = vp.width; dCanvas.height = vp.height;
+            
+            container.appendChild(pCanvas);
+            container.appendChild(tLayer);
+            container.appendChild(dCanvas);
+
+            // تحسين الرندرة للنصوص
+            const renderCtx = pCanvas.getContext('2d', { alpha: false });
+            renderCtx.imageSmoothingEnabled = false; 
+
+            await page.render({ 
+                canvasContext: renderCtx, 
+                viewport: vp,
+                intent: 'print'
+            }).promise;
+            
+            // بناء طبقة النصوص
+            const textContent = await page.getTextContent();
+            pdfjsLib.renderTextLayer({
+                textContent: textContent,
+                container: tLayer,
+                viewport: vp,
+                textDivs: []
+            });
+
+            renderStoredStrokes(num, dCanvas); setupDrawingEngine(num, dCanvas);
+        }
+
+        function drawBlackSharpBrace(ctx, x, y, h, side) {
+            ctx.save(); ctx.strokeStyle = '#000000'; ctx.lineWidth = 6;
+            const wing = 18; const mid = 18; ctx.beginPath();
+            if (side === 'start') {
+                ctx.moveTo(x + wing, y); ctx.lineTo(x, y); ctx.lineTo(x, y + h/2 - 10);
+                ctx.lineTo(x - mid, y + h/2); ctx.lineTo(x, y + h/2 + 10);
+                ctx.lineTo(x, y + h); ctx.lineTo(x + wing, y + h);
+            } else {
+                ctx.moveTo(x - wing, y); ctx.lineTo(x, y); ctx.lineTo(x, y + h/2 - 10);
+                ctx.lineTo(x + mid, y + h/2); ctx.lineTo(x, y + h/2 + 10);
+                ctx.lineTo(x, y + h); ctx.lineTo(x - wing, y + h);
+            }
+            ctx.stroke(); ctx.restore();
+        }
+
+        function setupDrawingEngine(num, canvas) {
+            const ctx = canvas.getContext('2d');
+            const getPos = e => {
+                const r = canvas.getBoundingClientRect();
+                const cx = (e.clientX || (e.touches ? e.touches[0].clientX : null));
+                const cy = (e.clientY || (e.touches ? e.touches[0].clientY : null));
+                if (cx === null) return null;
+                return { x: (cx - r.left) * (canvas.width / r.width), y: (cy - r.top) * (canvas.height / r.height) };
+            };
+            const down = e => {
+                if(isCropMode) { handleCropStart(e); return; }
+                if(!isHighlightEnabled) return;
+                isPainting = true; startPos = getPos(e);
+                if(!pageStrokes[num]) pageStrokes[num] = [];
+                if (drawMode === 'free' || drawMode === 'eraser') {
+                    pageStrokes[num].push({ mode: drawMode, color: brushColor, size: brushSize, paths:[[startPos.x/canvas.width, startPos.y/canvas.height]] });
+                } else if (drawMode === 'rect') {
+                    pageStrokes[num].push({ mode: 'rect', color: brushColor, x: startPos.x/canvas.width, y: startPos.y/canvas.height, w: 0, h: 0, brace: braceSide });
+                }
+                updateStrokeStyle(ctx, drawMode, canvas.width);
+            };
+            const move = e => {
+                if(isCropMode && isPainting) { handleCropMove(e); return; }
+                if(!isPainting || !isHighlightEnabled) return;
+                const p = getPos(e); if (!p) return;
+                if (drawMode === 'free' || drawMode === 'eraser') {
+                    ctx.beginPath(); ctx.moveTo(startPos.x, startPos.y); ctx.lineTo(p.x, p.y); ctx.stroke();
+                    pageStrokes[num][pageStrokes[num].length-1].paths.push([p.x/canvas.width, p.y/canvas.height]); startPos = p;
+                } else if (drawMode === 'rect') {
+                    renderStoredStrokes(num, canvas);
+                    const last = pageStrokes[num][pageStrokes[num].length-1];
+                    last.w = (p.x - startPos.x)/canvas.width; last.h = (p.y - startPos.y)/canvas.height;
+                    ctx.fillStyle = brushColor; ctx.globalAlpha = 0.35; ctx.fillRect(startPos.x, startPos.y, p.x - startPos.x, p.y - startPos.y); ctx.globalAlpha = 1.0;
+                    if (braceSide === 'both' || braceSide === 'left') drawBlackSharpBrace(ctx, startPos.x, startPos.y, p.y - startPos.y, 'start');
+                    if (braceSide === 'both' || braceSide === 'right') drawBlackSharpBrace(ctx, p.x, startPos.y, p.y - startPos.y, 'end');
+                }
+            };
+            const up = e => { if(isCropMode) handleCropEnd(); isPainting = false; saveToDB(); };
+            canvas.onmousedown = down; canvas.onmousemove = move; canvas.onmouseup = up;
+            canvas.ontouchstart = down; canvas.ontouchmove = move; canvas.ontouchend = up;
+        }
+
+        function updateStrokeStyle(ctx, mode, canvasWidth) {
+            ctx.lineCap = 'round'; ctx.lineJoin = 'round'; ctx.lineWidth = (brushSize/1000)*canvasWidth;
+            if (mode === 'eraser') { ctx.globalCompositeOperation = 'destination-out'; ctx.strokeStyle = 'rgba(0,0,0,1)'; } 
+            else { ctx.globalCompositeOperation = 'source-over'; ctx.strokeStyle = brushColor; }
+        }
+
+        function renderStoredStrokes(num, canvas) {
+            if(!pageStrokes[num]) return;
+            const ctx = canvas.getContext('2d'); ctx.clearRect(0, 0, canvas.width, canvas.height);
+            pageStrokes[num].forEach(s => {
+                if(s.mode === 'rect') {
+                    ctx.fillStyle = s.color; ctx.globalAlpha = 0.35; ctx.fillRect(s.x*canvas.width, s.y*canvas.height, s.w*canvas.width, s.h*canvas.height); ctx.globalAlpha = 1.0;
+                    if (s.brace === 'both' || s.brace === 'left') drawBlackSharpBrace(ctx, s.x*canvas.width, s.y*canvas.height, s.h*canvas.height, 'start');
+                    if (s.brace === 'both' || s.brace === 'right') drawBlackSharpBrace(ctx, (s.x+s.w)*canvas.width, s.y*canvas.height, s.h*canvas.height, 'end');
+                } else {
+                    updateStrokeStyle(ctx, s.mode, canvas.width); if(s.mode !== 'eraser') ctx.strokeStyle = s.color;
+                    ctx.beginPath(); if(s.paths?.length) { ctx.moveTo(s.paths[0][0]*canvas.width, s.paths[0][1]*canvas.height); s.paths.forEach(p => ctx.lineTo(p[0]*canvas.width, p[1]*canvas.height)); ctx.stroke(); }
+                }
+            });
+            ctx.globalCompositeOperation = 'source-over';
+        }
+
+        function setBraceSide(side) { braceSide = side; document.querySelectorAll('.brace-toggle-btn').forEach(btn => btn.classList.remove('active')); document.getElementById('brace-' + side).classList.add('active'); }
+        function toggleAutoScrollTools() { isScrollToolsVisible = !isScrollToolsVisible; document.getElementById('auto-scroll-toggle-btn').classList.toggle('active', isScrollToolsVisible); document.getElementById('scroll-sub-tools').classList.toggle('visible', isScrollToolsVisible); }
+        function runAutoScrollToggle() { isAutoScrolling = !isAutoScrolling; const btn = document.getElementById('play-scroll-btn'); const icon = document.getElementById('scroll-play-icon'); if(isAutoScrolling) { icon.innerHTML = `<path d="M5 4h3v12H5V4zm7 0h3v12h-3V4z"></path>`; btn.classList.add('text-green-400'); subPixelAccumulator = 0; runAutoScrollLoop(); } else { icon.innerHTML = `<path d="M4.5 3.5v13l11-6.5-11-6.5z"></path>`; btn.classList.remove('text-green-400'); cancelAnimationFrame(scrollAnimId); } }
+        function updateScrollSpeed(val) { scrollSpeed = parseInt(val); document.getElementById('speed-label').innerText = `${val}%`; }
+        function runAutoScrollLoop() { if(!isAutoScrolling) return; const root = document.getElementById('scroll-root'); let increment = (Math.pow(scrollSpeed, 2) / 1000) + (scrollSpeed / 120); subPixelAccumulator += increment; if (subPixelAccumulator >= 1) { let p = Math.floor(subPixelAccumulator); root.scrollTop += p; subPixelAccumulator -= p; } scrollAnimId = requestAnimationFrame(runAutoScrollLoop); }
+
+        function toggleCaptureTools() { isCaptureToolsVisible = !isCaptureToolsVisible; document.getElementById('capture-main-btn').classList.toggle('active', isCaptureToolsVisible); document.getElementById('capture-sub-tools').classList.toggle('visible', isCaptureToolsVisible); }
+
+        async function captureFullPage() {
+            const num = document.getElementById('page-now').innerText;
+            const holder = document.getElementById(`pg-${num}`);
+            if (!holder) return;
+            let pdfC = holder.querySelector('.pdf-canvas'), drawC = holder.querySelector('.draw-layer');
+            if (!pdfC || !drawC) { showLoading("REBUILDING PAGE..."); await renderPageContent(num, holder); pdfC = holder.querySelector('.pdf-canvas'); drawC = holder.querySelector('.draw-layer'); hideLoading(); }
+            const final = document.createElement('canvas'); final.width = pdfC.width; final.height = pdfC.height;
+            const fctx = final.getContext('2d');
+            if(isNight) fctx.filter = 'invert(1) hue-rotate(180deg)'; fctx.drawImage(pdfC, 0, 0); fctx.filter = 'none';
+            fctx.globalCompositeOperation = isNight ? 'screen' : 'multiply'; fctx.drawImage(drawC, 0, 0);
+            const link = document.createElement('a'); link.download = `page_${num}.png`; link.href = final.toDataURL(); link.click(); showToast("تم حفظ الصفحة كاملة");
+        }
+
+        async function captureCurrentView() {
+            showLoading("SCREEN CAPTURE");
+            const viewCanvas = document.createElement('canvas'); viewCanvas.width = window.innerWidth * 2; viewCanvas.height = (window.innerHeight - 80) * 2;
+            const ctx = viewCanvas.getContext('2d');
+            document.querySelectorAll('.page-holder').forEach(holder => {
+                const hRect = holder.getBoundingClientRect();
+                if (hRect.bottom > 80 && hRect.top < window.innerHeight) {
+                    const pdfC = holder.querySelector('.pdf-canvas'), drawC = holder.querySelector('.draw-layer');
+                    if (pdfC && drawC) {
+                        const dY = (hRect.top - 80) * 2; const dX = hRect.left * 2;
+                        const temp = document.createElement('canvas'); temp.width = pdfC.width; temp.height = pdfC.height; const tctx = temp.getContext('2d');
+                        if(isNight) tctx.filter = 'invert(1) hue-rotate(180deg)'; tctx.drawImage(pdfC, 0, 0); tctx.filter = 'none';
+                        tctx.globalCompositeOperation = isNight ? 'screen' : 'multiply'; tctx.drawImage(drawC, 0, 0);
+                        ctx.drawImage(temp, dX, dY, hRect.width * 2, hRect.height * 2);
+                    }
+                }
+            });
+            const link = document.createElement('a'); link.download = 'screen.png'; link.href = viewCanvas.toDataURL(); link.click(); hideLoading(); showToast("تم التقاط الشاشة");
+        }
+
+        function startCropMode() { isCropMode = !isCropMode; if(isCropMode) { showToast("اسحب للتصوير الطويل.. الحواف تحرك الصفحة"); document.body.classList.add('crop-active'); } else { document.body.classList.remove('crop-active'); } }
+        function handleCropStart(e) { const root = document.getElementById('scroll-root'); startPos = { x: e.clientX, y: e.clientY, scroll: root.scrollTop }; const rect = document.getElementById('selection-rect'); rect.style.display = 'block'; rect.style.width = '0px'; rect.style.height = '0px'; isPainting = true; }
+        function handleCropMove(e) {
+            const rect = document.getElementById('selection-rect'); const root = document.getElementById('scroll-root');
+            if(e.clientY > window.innerHeight - 60) root.scrollTop += 25; if(e.clientY < 140) root.scrollTop -= 25;
+            const currentScrollDiff = root.scrollTop - startPos.scroll;
+            const width = e.clientX - startPos.x; const height = (e.clientY - startPos.y) + currentScrollDiff;
+            rect.style.left = (width > 0 ? startPos.x : e.clientX) + 'px'; rect.style.top = (height > 0 ? startPos.y : e.clientY) + 'px';
+            rect.style.width = Math.abs(width) + 'px'; rect.style.height = Math.abs(height) + 'px';
+        }
+        async function handleCropEnd() {
+            const rect = document.getElementById('selection-rect').getBoundingClientRect();
+            if(rect.width < 10 || rect.height < 10) { document.getElementById('selection-rect').style.display = 'none'; isPainting = false; return; }
+            showLoading("DYNAMICS CAPTURE");
+            const resultCanvas = document.createElement('canvas'); const container = document.getElementById('pages-container'); const containerRect = container.getBoundingClientRect();
+            const absTop = rect.top - containerRect.top; const absLeft = rect.left - containerRect.left; const scale = 2.0;
+            resultCanvas.width = rect.width * scale; resultCanvas.height = rect.height * scale; const ctx = resultCanvas.getContext('2d');
+            for (let holder of document.querySelectorAll('.page-holder')) {
+                const hRect = holder.getBoundingClientRect(); const hTop = hRect.top - containerRect.top; const hBottom = hTop + hRect.height;
+                if (hBottom > absTop && hTop < (absTop + rect.height)) {
+                    let pdfC = holder.querySelector('.pdf-canvas'), drawC = holder.querySelector('.draw-layer');
+                    if (!pdfC || !drawC) { await renderPageContent(holder.dataset.num, holder); pdfC = holder.querySelector('.pdf-canvas'); drawC = holder.querySelector('.draw-layer'); }
+                    if (pdfC && drawC) {
+                        const sY = Math.max(0, absTop - hTop) * (pdfC.height / hRect.height);
+                        const dY = Math.max(0, hTop - absTop) * scale;
+                        const drawH = Math.min(hRect.height - Math.max(0, absTop - hTop), rect.height - Math.max(0, hTop - absTop)) * scale;
+                        const sX = (absLeft - (hRect.left - containerRect.left)) * (pdfC.width / hRect.width);
+                        const sW = rect.width * (pdfC.width / hRect.width);
+                        const temp = document.createElement('canvas'); temp.width = sW; temp.height = drawH / scale * (pdfC.height / hRect.height); const tctx = temp.getContext('2d');
+                        if(isNight) tctx.filter = 'invert(1) hue-rotate(180deg)'; tctx.drawImage(pdfC, sX, sY, sW, temp.height, 0, 0, sW, temp.height); tctx.filter = 'none';
+                        tctx.globalCompositeOperation = isNight ? 'screen' : 'multiply'; tctx.drawImage(drawC, sX, sY, sW, temp.height, 0, 0, sW, temp.height);
+                        ctx.drawImage(temp, 0, dY, resultCanvas.width, drawH);
+                    }
+                }
+            }
+            const link = document.createElement('a'); link.download = 'long_capture.png'; link.href = resultCanvas.toDataURL(); link.click();
+            document.getElementById('selection-rect').style.display = 'none'; isPainting = false; isCropMode = false; hideLoading();
+            document.body.classList.remove('crop-active'); showToast("تم حفظ الصورة بنجاح");
+        }
+
+        function toggleHighlightTools() { isHighlightEnabled = !isHighlightEnabled; document.getElementById('toggle-pen-btn').classList.toggle('active', isHighlightEnabled); document.getElementById('highlight-sub-tools').classList.toggle('visible', isHighlightEnabled); }
+        function handleUndo() { const n = document.getElementById('page-now').innerText; if(pageStrokes[n]?.length > 0) { pageStrokes[n].pop(); const c = document.querySelector(`#pg-${n} .draw-layer`); if(c) renderStoredStrokes(n, c); saveToDB(); } }
+        function toggleFlex() { const cur = document.getElementById('page-now').innerText; isFlexible = !isFlexible; document.body.className = isFlexible ? "flexible-view" : "natural-view"; document.getElementById('flex-btn').innerText = isFlexible ? "View: Flexible" : "View: Natural"; if(activeId) openReader(activeId, cur); }
+        function closeReader() { isAutoScrolling = false; cancelAnimationFrame(scrollAnimId); document.getElementById('reader-view').classList.add('hidden'); document.getElementById('reader-controls').classList.add('hidden'); document.getElementById('library-view').classList.remove('hidden'); document.getElementById('lib-controls').classList.remove('hidden'); renderLib(); }
+        function saveToDB() { const tx = db.transaction("books", "readwrite"); tx.objectStore("books").get(activeId).onsuccess = e => { let b = e.target.result; if(b){ b.strokes = pageStrokes; tx.objectStore("books").put(b); } }; }
+        function updateProgressDB(p) { const tx = db.transaction("books", "readwrite"); tx.objectStore("books").get(activeId).onsuccess = e => { let b = e.target.result; if(b){ b.last = p; tx.objectStore("books").put(b); } }; }
+        function toggleInvert() { isNight = !isNight; document.body.classList.toggle('inverted-mode', isNight); }
+        function updateBrushColor(c, btn) { brushColor = c; document.querySelectorAll('.color-btn').forEach(x=>x.classList.remove('active')); btn.classList.add('active'); if(drawMode==='eraser') setDrawMode('free'); }
+        function setDrawMode(m) { drawMode = m; document.querySelectorAll('.tool-btn').forEach(x=>x.classList.remove('active')); document.getElementById('draw-'+m).classList.add('active'); }
+        function showLoading(t) { document.getElementById('loading').style.display = 'flex'; const textEl = document.getElementById('loading-text'); if(textEl) textEl.innerText = t; }
+        function hideLoading() { document.getElementById('loading').style.display = 'none'; }
+        function showToast(m) { const t = document.getElementById('toast'); t.innerText = m; t.classList.remove('hidden'); setTimeout(() => t.classList.add('hidden'), 2000); }
+
+        let deleteTargetId = null;
+        function handleDelete(e, id) { e.stopPropagation(); deleteTargetId = id; document.getElementById('confirm-modal').style.display = 'flex'; }
+        
+        document.addEventListener('DOMContentLoaded', () => {
+            const btnNo = document.getElementById('confirm-no');
+            const btnYes = document.getElementById('confirm-yes');
+            if(btnNo) btnNo.onclick = () => document.getElementById('confirm-modal').style.display = 'none';
+            if(btnYes) btnYes.onclick = () => {
+                const tx = db.transaction("books", "readwrite");
+                tx.objectStore("books").delete(deleteTargetId).onsuccess = () => {
+                    document.getElementById('confirm-modal').style.display = 'none';
+                    renderLib();
+                    showToast("تم الحذف بنجاح");
+                };
+            };
+        });
+
+        function updateCursor(e) {
+            const cursor = document.getElementById('brush-cursor'); const over = e.target.classList.contains('draw-layer');
+            if (!over || (!isHighlightEnabled && !isCropMode)) { cursor.style.display = 'none'; return; }
+            cursor.style.display = 'block'; const r = e.target.getBoundingClientRect(); const s = (brushSize/1000)*r.width;
+            cursor.style.width = s+'px'; cursor.style.height = s+'px'; cursor.style.left = e.clientX+'px'; cursor.style.top = e.clientY+'px';
+            cursor.style.marginLeft = -(s/2)+'px'; cursor.style.marginTop = -(s/2)+'px';
+            cursor.style.backgroundColor = isCropMode ? 'rgba(59,130,246,0.2)' : (drawMode==='eraser'?'rgba(255,255,255,0.2)':brushColor);
+        }
+        window.addEventListener('mousemove', updateCursor);
+
+    </script>
+</body>
+</html>
