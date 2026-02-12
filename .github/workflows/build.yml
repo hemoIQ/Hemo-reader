@@ -24,11 +24,9 @@ jobs:
           node-version: 18
 
       - name: Install Dependencies
-        working-directory: Upload_to_GitHub
         run: npm ci
 
       - name: Build & Release
-        working-directory: Upload_to_GitHub
         env:
           GH_TOKEN: ${{ secrets.GH_TOKEN }}
         run: npm run dist
