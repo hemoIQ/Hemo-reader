@@ -35,8 +35,8 @@
     "publish": [
       {
         "provider": "github",
-        "owner": "Hemo",
-        "repo": "smart-pdf-reader-pro"
+        "owner": "hemoIQ",
+        "repo": "Hemo-reader"
       }
     ]
   }
