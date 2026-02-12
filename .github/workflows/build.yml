@@ -26,7 +26,28 @@ jobs:
       - name: Install Dependencies
         run: npm ci
 
-      - name: Build & Release
+      - name: Build
         env:
           GH_TOKEN: ${{ secrets.GH_TOKEN }}
         run: npm run dist
+
+      - name: Read Version
+        id: version
+        run: |
+          $packageParams = Get-Content package.json | ConvertFrom-Json
+          $version = $packageParams.version
+          echo "version=$version" >> $env:GITHUB_OUTPUT
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: v${{ steps.version.outputs.version }}
+          name: Release v${{ steps.version.outputs.version }}
+          files: |
+            dist/*.exe
+            dist/*.yml
+            dist/*.blockmap
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
