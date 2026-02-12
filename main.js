@@ -43,24 +43,37 @@ function createWindow() {
   });
 
   // Auto-updater events
+  autoUpdater.on('checking-for-update', () => {
+    if (mainWindow) mainWindow.webContents.send('update_status', 'checking');
+  });
+
   autoUpdater.on('update-available', () => {
-    // Silent: Do not notify user yet, just let it download
+    if (mainWindow) mainWindow.webContents.send('update_status', 'available');
     console.log('Update available. Downloading...');
   });
 
-  autoUpdater.on('update-downloaded', () => {
-    // Now notify the user that the update is ready
-    if (mainWindow) {
-      mainWindow.webContents.send('update_downloaded');
-    }
+  autoUpdater.on('update-not-available', () => {
+    if (mainWindow) mainWindow.webContents.send('update_status', 'not_available');
   });
 
   autoUpdater.on('error', (err) => {
     console.log('Auto-updater error:', err);
+    if (mainWindow) mainWindow.webContents.send('update_status', 'error', err.message);
+  });
+
+  autoUpdater.on('update-downloaded', () => {
+    if (mainWindow) {
+      mainWindow.webContents.send('update_status', 'downloaded'); // Update status text
+      mainWindow.webContents.send('update_downloaded'); // Trigger existing toast
+    }
   });
 
   ipcMain.on('restart_app', () => {
-    autoUpdater.quitAndInstall(false, true); // silent=false, forceRunAfter=true
+    autoUpdater.quitAndInstall(false, true);
+  });
+
+  ipcMain.on('check_update', () => {
+    autoUpdater.checkForUpdates();
   });
 }
 
