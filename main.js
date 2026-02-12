@@ -22,35 +22,43 @@ function createWindow() {
     mainWindow = null;
   });
 
-  // Check for updates once the window is ready
-  mainWindow.once('ready-to-show', () => {
-    autoUpdater.checkForUpdatesAndNotify();
+// Auto-Update Configuration
+autoUpdater.autoDownload = true;
+autoUpdater.autoInstallOnAppQuit = true;
+
+function checkForUpdates() {
+  if (!mainWindow) return;
+  // Check internet connection or just rely on autoUpdater's error handling
+  autoUpdater.checkForUpdates().catch(err => {
+    console.log('Update check failed (likely offline):', err);
   });
 }
 
-app.on('ready', createWindow);
-
-app.on('window-all-closed', function () {
-  if (process.platform !== 'darwin') {
-    app.quit();
-  }
-});
-
-app.on('activate', function () {
-  if (mainWindow === null) {
-    createWindow();
-  }
+// Check for updates once the window is ready
+mainWindow.once('ready-to-show', () => {
+  // Wait a bit to ensure potential network connection is established
+  setTimeout(() => {
+    checkForUpdates();
+  }, 3000);
 });
 
 // Auto-updater events
 autoUpdater.on('update-available', () => {
-  mainWindow.webContents.send('update_available');
+  // Silent: Do not notify user yet, just let it download
+  console.log('Update available. Downloading...');
 });
 
 autoUpdater.on('update-downloaded', () => {
-  mainWindow.webContents.send('update_downloaded');
+  // Now notify the user that the update is ready
+  if (mainWindow) {
+    mainWindow.webContents.send('update_downloaded');
+  }
+});
+
+autoUpdater.on('error', (err) => {
+  console.log('Auto-updater error:', err);
 });
 
 ipcMain.on('restart_app', () => {
-  autoUpdater.quitAndInstall();
+  autoUpdater.quitAndInstall(false, true); // silent=false, forceRunAfter=true
 });
