@@ -22,8 +22,6 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 18
-          cache: 'npm'
-          cache-dependency-path: 'Upload_to_GitHub/package-lock.json'
 
       - name: Install Dependencies
         working-directory: Upload_to_GitHub
