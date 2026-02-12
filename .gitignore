@@ -4,3 +4,4 @@ release
 libs/fonts/*.zip
 *.log
 .DS_Store
+Upload_to_GitHub/
