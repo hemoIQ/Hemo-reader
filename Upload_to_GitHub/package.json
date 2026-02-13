@@ -1,6 +1,6 @@
 {
   "name": "smart-pdf-reader-pro",
-  "version": "1.1.0",
+  "version": "1.1.2",
   "description": "A smart PDF reader with offline capabilities and text fixing features.",
   "main": "main.js",
   "scripts": {
@@ -28,29 +28,23 @@
   },
   "build": {
     "appId": "com.hemo.smartpdfreader",
+    "extraResources": [
+      {
+        "from": "libs/cmaps",
+        "to": "cmaps"
+      }
+    ],
     "win": {
-      "target": "nsis",
-      "icon": "icon.ico",
-      "publish": [
-        "github"
-      ]
-    },
-    "nsis": {
-      "oneClick": false,
-      "allowToChangeInstallationDirectory": true,
-      "perMachine": false
+      "target": [
+        "nsis"
+      ],
+      "icon": "icon.ico"
     },
     "publish": [
       {
         "provider": "github",
         "owner": "hemoIQ",
         "repo": "Hemo-reader"
-      }
-    ],
-    "extraResources": [
-      {
-        "from": "libs/cmaps",
-        "to": "cmaps"
       }
     ]
   }
